@@ -1,0 +1,129 @@
+#include <Adafruit_NeoPixel.h>
+#include "DHT.h"
+
+// pin definitions
+#define DHTPIN 27
+#define DHTTYPE DHT22
+#define SOIL_PIN 32
+#define PUMP_PIN 18
+#define LED_PIN 2
+#define NUM_LEDS 10
+
+// soil moisture calibration
+const int WET = 1600;
+const int DRY = 3500;
+
+// LED scheduling variables
+unsigned long ledStartTime = 0;
+bool ledsOn = true;
+
+// DHT22 initialization
+DHT dht(DHTPIN, DHTTYPE);
+
+// LED strip initialization
+Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// function prototype
+void colorWipe(uint32_t color, int wait);
+
+void setup() {
+  Serial.begin(115200);
+
+  // pump init - keep off at boot for safety
+  pinMode(PUMP_PIN, OUTPUT);
+  digitalWrite(PUMP_PIN, LOW);
+
+  // DHT sensor init
+  dht.begin();
+
+  // LED strip init
+  strip.begin();
+  strip.setBrightness(30);
+  strip.show();
+
+  // startup white wipe to show LEDs are working
+  colorWipe(strip.Color(255, 255, 255), 10);
+  delay(1000);
+  colorWipe(strip.Color(0, 0, 0), 0);
+
+  // turn LEDs on green at startup
+  colorWipe(strip.Color(0, 255, 0), 0);
+  ledStartTime = millis();
+
+  Serial.println("System Initialized");
+}
+
+void loop() {
+
+  // ---- LED SCHEDULING ----
+  // 12 hours in milliseconds = 43200000
+  // for testing you can change 43200000 to something
+  // smaller like 10000 (10 seconds)
+  unsigned long elapsed = millis() - ledStartTime;
+
+  if (ledsOn && elapsed >= 43200000) {
+    // 12 hours passed - turn LEDs off
+    colorWipe(strip.Color(0, 0, 0), 0);
+    ledsOn = false;
+    ledStartTime = millis();
+    Serial.println("💡 LEDs turned OFF");
+  } 
+  else if (!ledsOn && elapsed >= 43200000) {
+    // 12 hours off passed - turn LEDs back on
+    colorWipe(strip.Color(0, 255, 0), 0);
+    ledsOn = true;
+    ledStartTime = millis();
+    Serial.println("💡 LEDs turned ON");
+  }
+
+  // ---- READ SENSORS ----
+  int RAW = analogRead(SOIL_PIN);
+  int moisturePercent = constrain(map(RAW, DRY, WET, 0, 100), 0, 100);
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  // check if DHT reading is valid
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Failed To Read From DHT Sensor");
+    delay(2000);
+    return;
+  }
+
+  // ---- PRINT SENSOR DATA ----
+  Serial.println("---- Sensor Readings ----");
+  Serial.print("Humidity: ");
+  Serial.print(h);
+  Serial.println("%");
+  Serial.print("Temperature: ");
+  Serial.print(t);
+  Serial.println("°C");
+  Serial.print("Soil Moisture: ");
+  Serial.print(moisturePercent);
+  Serial.println("%");
+  Serial.println("-------------------------");
+
+  // ---- PUMP LOGIC ----
+  if (moisturePercent < 30) {
+    Serial.println(" Soil is dry - turning pump ON");
+    digitalWrite(PUMP_PIN, HIGH);
+    delay(2000); // run pump for 2 seconds
+    digitalWrite(PUMP_PIN, LOW);
+    Serial.println(" Pump turned OFF");
+  } 
+  else {
+    Serial.println("Soil moisture is healthy");
+  }
+
+  // wait 5 seconds before next reading
+  delay(5000);
+}
+
+// fills strip one LED at a time with a color
+void colorWipe(uint32_t color, int wait) {
+  for (int i = 0; i < strip.numPixels(); i++) {
+    strip.setPixelColor(i, color);
+    strip.show();
+    delay(wait);
+  }
+}
+
