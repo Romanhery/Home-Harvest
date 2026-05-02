@@ -1,0 +1,372 @@
+#include <Arduino.h>
+#include <U8g2lib.h>
+#include <Wire.h>
+#include <Adafruit_NeoPixel.h>
+#include <DHT.h>
+#include <Preferences.h>
+
+// ---- PIN DEFINITIONS ----
+#define DHTPIN 27
+#define DHTTYPE DHT22
+#define SOIL_PIN 32
+#define PUMP_PIN 18
+#define LED_PIN 2
+#define NUM_LEDS 10
+
+// Corrected Joystick Pins
+#define JOY_X 34
+#define JOY_Y 33
+#define JOY_BTN 25 // Moved to Pin 25 for INPUT_PULLUP
+
+// ---- CUSTOM ICONS (24x24) ----
+const unsigned char icon_gear [] PROGMEM = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 
+  0x33, 0x80, 0x00, 0x3b, 0x80, 0x00, 0x7d, 0xc0, 0x00, 0xfe, 0xe0, 0x01, 0xfe, 0xe0, 0x01, 0xff, 
+  0x70, 0x03, 0xff, 0xb0, 0x03, 0xff, 0xb0, 0x03, 0xfd, 0xa0, 0x03, 0xfd, 0x80, 0x03, 0xfb, 0x00, 
+  0x01, 0xef, 0x00, 0x00, 0xfe, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char icon_drop [] PROGMEM = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x20, 0x00, 0x08, 
+  0x20, 0x80, 0x0c, 0x01, 0x80, 0x00, 0xf9, 0x00, 0x01, 0xfc, 0x00, 0x03, 0xfe, 0x00, 0x03, 0xfe, 
+  0x00, 0x33, 0xfe, 0x60, 0x03, 0xfe, 0x00, 0x03, 0xfe, 0x00, 0x03, 0xfe, 0x00, 0x01, 0xfc, 0x00, 
+  0x04, 0xf9, 0x00, 0x0c, 0x01, 0x80, 0x00, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char icon_light_on [] PROGMEM = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x07, 
+  0xe2, 0x00, 0x0f, 0xf4, 0x00, 0x0f, 0xe8, 0x00, 0x1f, 0xd8, 0x00, 0x1f, 0x78, 0x00, 0x1e, 0xf8, 
+  0x00, 0x0d, 0xf8, 0x00, 0x0b, 0xf8, 0x00, 0x07, 0xf0, 0x00, 0x0f, 0xe0, 0x00, 0x10, 0x00, 0x00, 
+  0x03, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x03, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x80, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char icon_light_off [] PROGMEM = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x30, 0x00, 0x00, 0x30, 0x00, 0x0c, 
+  0x00, 0xc0, 0x0c, 0x78, 0xc0, 0x01, 0xfe, 0x00, 0x03, 0xcf, 0x00, 0x03, 0x03, 0x00, 0x07, 0x01, 
+  0x80, 0x76, 0x01, 0xb8, 0x76, 0x01, 0xb8, 0x07, 0x01, 0x80, 0x03, 0x03, 0x80, 0x03, 0x87, 0x00, 
+  0x01, 0xfe, 0x00, 0x0c, 0xfc, 0xc0, 0x0c, 0x00, 0xc0, 0x08, 0x30, 0x40, 0x00, 0x30, 0x00, 0x00, 
+  0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char icon_sun [] PROGMEM = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x11, 0x38, 0x00, 
+  0x11, 0x6c, 0x00, 0x03, 0x44, 0x1f, 0xfe, 0x04, 0x00, 0x00, 0x1c, 0x00, 0x00, 0x00, 0xff, 0xf0, 
+  0x00, 0x00, 0x18, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x48, 0x00, 0x00, 0x30, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+// Generated Wind Placeholder
+const unsigned char icon_wind [] PROGMEM = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0x00, 0x00, 
+  0x88, 0x00, 0xfe, 0x04, 0x00, 0x02, 0x04, 0x00, 0x02, 0x78, 0x00, 0xfe, 0x80, 0x00, 0x02, 0x80, 
+  0x00, 0x02, 0x80, 0x00, 0x0c, 0x70, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+// ---- OBJECT INIT ----
+DHT dht(DHTPIN, DHTTYPE);
+Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+Preferences preferences; 
+
+// ---- SENSOR & CONTROL VARIABLES ----
+const int WET = 1600;
+const int DRY = 3500;
+int moisturePercent = 0;
+float tempF = 0.0;
+int humi = 0;
+
+unsigned long ledStartTime = 0;
+bool ledsOn = true;
+
+bool manualPumpActive = false;
+unsigned long manualPumpStartTime = 0;
+const unsigned long MANUAL_PUMP_DURATION = 3000; 
+
+// ---- UI & SETTINGS VARIABLES ----
+enum AppState { DASHBOARD, MENU, EDIT_VALUE };
+AppState currentState = DASHBOARD;
+
+const int NUM_PLANTS = 4;
+String plantNames[NUM_PLANTS] = {"Tomato", "Basil", "Pothos", "Aloe Vera"};
+int defaultThresholds[NUM_PLANTS] = {45, 40, 25, 10};
+
+int currentPlantIdx = 0;
+int userThreshold = 45;
+int ledDurationHours = 12;
+
+int dashIndex = 0; 
+int menuIndex = 0; 
+// Added the Back button to the array
+const int NUM_MENU_ITEMS = 4;
+String menuItems[NUM_MENU_ITEMS] = {"Plant", "LED Hrs", "Water %", "<- Back"};
+
+unsigned long lastJoyCheck = 0;
+bool btnPressed = false;
+
+// ---- FUNCTION PROTOTYPES ----
+void colorWipe(uint32_t color, int wait);
+void readSensors();
+void controlHardware();
+void handleJoystick();
+void drawDashboard();
+void drawMenu();
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(PUMP_PIN, OUTPUT);
+  digitalWrite(PUMP_PIN, LOW);
+  pinMode(JOY_BTN, INPUT_PULLUP); // This pullup is vital for Pin 25
+
+  preferences.begin("harvest", false);
+  currentPlantIdx = preferences.getInt("plantIdx", 0);
+  userThreshold = preferences.getInt("thresh", defaultThresholds[currentPlantIdx]);
+  ledDurationHours = preferences.getInt("ledHrs", 12);
+
+  dht.begin();
+  strip.begin();
+  strip.setBrightness(30);
+  strip.show();
+  
+  u8g2.setBusClock(400000); 
+  u8g2.begin();
+
+  colorWipe(strip.Color(0, 255, 0), 0);
+  ledStartTime = millis();
+}
+
+void loop() {
+  handleJoystick();
+  readSensors();
+  controlHardware();
+
+  u8g2.clearBuffer();
+  if (currentState == DASHBOARD) {
+    drawDashboard();
+  } else {
+    drawMenu();
+  }
+  u8g2.sendBuffer();
+}
+
+// ---- HARDWARE CONTROL ----
+void controlHardware() {
+  unsigned long durationMs = (unsigned long)ledDurationHours * 3600000; 
+  unsigned long elapsed = millis() - ledStartTime;
+
+  if (ledsOn && elapsed >= durationMs) {
+    colorWipe(strip.Color(0, 0, 0), 0);
+    ledsOn = false;
+    ledStartTime = millis();
+  } 
+  else if (!ledsOn && elapsed >= (24UL * 3600000UL - durationMs)) { 
+    colorWipe(strip.Color(0, 255, 0), 0);
+    ledsOn = true;
+    ledStartTime = millis();
+  }
+
+  if (manualPumpActive) {
+    digitalWrite(PUMP_PIN, HIGH);
+    if (millis() - manualPumpStartTime >= MANUAL_PUMP_DURATION) {
+      manualPumpActive = false; 
+      digitalWrite(PUMP_PIN, LOW);
+    }
+  } 
+  else {
+    if (moisturePercent < userThreshold) {
+      digitalWrite(PUMP_PIN, HIGH);
+    } else if (moisturePercent >= (userThreshold + 5)) {
+      digitalWrite(PUMP_PIN, LOW);
+    }
+  }
+}
+
+void readSensors() {
+  static unsigned long lastRead = 0;
+  if (millis() - lastRead > 2000) {
+    lastRead = millis();
+    int RAW = analogRead(SOIL_PIN);
+    moisturePercent = constrain(map(RAW, DRY, WET, 0, 100), 0, 100);
+    
+    float t = dht.readTemperature(true);
+    float h = dht.readHumidity();
+    if (!isnan(t) && !isnan(h)) {
+      tempF = t;
+      humi = (int)h;
+    }
+  }
+}
+
+// ---- JOYSTICK LOGIC ----
+void handleJoystick() {
+  if (millis() - lastJoyCheck < 200) return; 
+  
+  int xVal = analogRead(JOY_X);
+  int yVal = analogRead(JOY_Y);
+  bool currentBtn = (digitalRead(JOY_BTN) == LOW);
+
+  // Handle Button Clicks
+  if (currentBtn && !btnPressed) {
+    btnPressed = true;
+    lastJoyCheck = millis();
+    
+    if (currentState == DASHBOARD) {
+      if (dashIndex == 0) { 
+        currentState = MENU;
+        menuIndex = 0;
+      } 
+      else if (dashIndex == 1) { 
+        if (!manualPumpActive) {
+          manualPumpActive = true;
+          manualPumpStartTime = millis();
+        }
+      } 
+      else if (dashIndex == 2) { 
+        ledsOn = !ledsOn;
+        if (ledsOn) colorWipe(strip.Color(0, 255, 0), 0);
+        else colorWipe(strip.Color(0, 0, 0), 0);
+        ledStartTime = millis(); 
+      }
+    } 
+    else if (currentState == MENU) {
+      // If we clicked the "<- Back" option
+      if (menuIndex == 3) {
+        currentState = DASHBOARD;
+      } else {
+        currentState = EDIT_VALUE;
+      }
+    } 
+    else if (currentState == EDIT_VALUE) {
+      currentState = MENU;
+      preferences.putInt("plantIdx", currentPlantIdx);
+      preferences.putInt("thresh", userThreshold);
+      preferences.putInt("ledHrs", ledDurationHours);
+    }
+  } else if (!currentBtn) {
+    btnPressed = false;
+  }
+
+  // Handle X-Axis (Dashboard Left/Right)
+  if (currentState == DASHBOARD) {
+    if (xVal > 3000) { 
+      dashIndex = (dashIndex - 1 + 3) % 3;
+      lastJoyCheck = millis();
+    } else if (xVal < 1000) { 
+      dashIndex = (dashIndex + 1) % 3;
+      lastJoyCheck = millis();
+    }
+  }
+
+  // Handle Y-Axis (Menu Up/Down/Values)
+  if (yVal < 1000) { // UP
+    lastJoyCheck = millis();
+    if (currentState == MENU) {
+      menuIndex = (menuIndex - 1 + NUM_MENU_ITEMS) % NUM_MENU_ITEMS;
+    } else if (currentState == EDIT_VALUE) {
+      if (menuIndex == 0) {
+        currentPlantIdx = (currentPlantIdx - 1 + NUM_PLANTS) % NUM_PLANTS;
+        userThreshold = defaultThresholds[currentPlantIdx]; 
+      }
+      else if (menuIndex == 1) ledDurationHours = min(24, ledDurationHours + 1);
+      else if (menuIndex == 2) userThreshold = min(100, userThreshold + 5);
+    }
+  } 
+  else if (yVal > 3000) { // DOWN
+    lastJoyCheck = millis();
+    if (currentState == MENU) {
+      menuIndex = (menuIndex + 1) % NUM_MENU_ITEMS;
+    } else if (currentState == EDIT_VALUE) {
+      if (menuIndex == 0) {
+        currentPlantIdx = (currentPlantIdx + 1) % NUM_PLANTS;
+        userThreshold = defaultThresholds[currentPlantIdx]; 
+      }
+      else if (menuIndex == 1) ledDurationHours = max(1, ledDurationHours - 1);
+      else if (menuIndex == 2) userThreshold = max(0, userThreshold - 5);
+    }
+  }
+}
+
+// ---- SCREEN DRAWING ----
+void drawDashboard() {
+  // Top Environment Section
+  u8g2.drawXBM(15, 20, 24, 24, icon_sun); 
+  u8g2.drawXBM(80, 20, 24, 24, icon_wind); 
+  
+  u8g2.setFont(u8g2_font_7x14_tr);
+  u8g2.setCursor(5, 55);
+  u8g2.print(tempF, 0); u8g2.print("F");
+  
+  u8g2.setCursor(75, 55);
+  u8g2.print(humi); u8g2.print("%");
+
+  // Center Soil Section
+  u8g2.drawXBM(52, 65, 24, 24, icon_drop); 
+  
+  u8g2.setFont(u8g2_font_logisoso24_tf); 
+  u8g2.setCursor(35, 115);
+  u8g2.print(moisturePercent); u8g2.print("%");
+
+  // Bottom Interactive Toolbar
+  int iconSpacing = 40;
+  int startX = 15;
+  int iconY = 100;
+
+  u8g2.drawXBM(startX, iconY, 24, 24, icon_gear);
+  u8g2.drawXBM(startX + iconSpacing, iconY, 24, 24, icon_drop); 
+  
+  // Swap Lightbulb Icon based on LED State
+  if (ledsOn) {
+    u8g2.drawXBM(startX + (iconSpacing * 2), iconY, 24, 24, icon_light_on);
+  } else {
+    u8g2.drawXBM(startX + (iconSpacing * 2), iconY, 24, 24, icon_light_off);
+  }
+
+  // Draw Highlight Box around selected icon
+  int boxX = startX - 4 + (dashIndex * iconSpacing);
+  u8g2.drawFrame(boxX, iconY - 4, 32, 32);
+}
+
+void drawMenu() {
+  u8g2.setFont(u8g2_font_7x14_tr);
+  u8g2.drawStr(10, 15, "-- SETTINGS --");
+
+  for (int i = 0; i < NUM_MENU_ITEMS; i++) {
+    int yPos = 40 + (i * 25); // Adjusted spacing to fit 4 items
+    
+    if (i == menuIndex) {
+      if (currentState == EDIT_VALUE) {
+        u8g2.drawBox(5, yPos - 12, 118, 16); 
+        u8g2.setDrawColor(0); 
+      } else {
+        u8g2.drawFrame(5, yPos - 12, 118, 16); 
+      }
+    }
+
+    u8g2.setCursor(10, yPos);
+    u8g2.print(menuItems[i]);
+    
+    // Don't print a colon or values for the "Back" button
+    if (i != 3) {
+      u8g2.print(": ");
+      if (i == 0) u8g2.print(plantNames[currentPlantIdx]);
+      else if (i == 1) { u8g2.print(ledDurationHours); u8g2.print("h"); }
+      else if (i == 2) { u8g2.print(userThreshold); u8g2.print("%"); }
+    }
+
+    u8g2.setDrawColor(1); 
+  }
+}
+
+void colorWipe(uint32_t color, int wait) {
+  for (int i = 0; i < strip.numPixels(); i++) {
+    strip.setPixelColor(i, color);
+    strip.show();
+    delay(wait);
+  }
+}
