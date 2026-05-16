@@ -1,0 +1,13 @@
+void loop() {
+  handleJoystick();
+  readSensors();       // This is where the moisture is actually "checked"
+  controlHardware();   // This is where the decisions are made
+
+  u8g2.clearBuffer();
+  if (currentState == DASHBOARD) {
+    drawDashboard();
+  } else {
+    drawMenu();
+  }
+  u8g2.sendBuffer();
+}
